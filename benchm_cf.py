@@ -6,206 +6,72 @@ from sklearn import preprocessing
 import gurobipy as gp
 from gurobipy import GRB
 
-##leo los datos de pigdata de R
+#data
 
-datos=pd.read_csv('pigdata.csv')
+data=pd.DataFrame(data={'firm':[1,2,4,5],'x1':[1,2.5,1.5,1.5],'x2':[1.5,0.5,1,2.5],'y1':[1,1,1,1]}) #cuando esta cerca de una cara
 
-#datos=datos[['firm','x1','y4']] #me quedo con un solo input y un solo output
-#datos=datos[0:3]
+firms=list(data['firm'])
 
-#datos=pd.DataFrame(data={'firm':[1,2,3],'x1':[1,2,2],'x2':[2,1,2],'y1':[1,1,1]})
+#k: firm to calculate the counterfactual
+#E_desired: efficiency one wants to obtain
+#norm: distance used, can be l2, l0 or l2+l0
+#type: technology used, can be CRS or VRS
 
-datos2=pd.DataFrame(data={'firm':[1,2,3],'x1':[1,2,2],'x2':[1.5,0.5,2],'y1':[1,2,1.5]})
-datos=datos2
+def counterf(data,k,E_desired,norm,type): 
 
-datos3=pd.DataFrame(data={'firm':[1,2,3,4,5],'x1':[1,2,1.5,2,2.5],'x2':[1.5,1,1.25,2,2],'y1':[1,1,1,1,1]})
-datos=datos3
-
-datos4=pd.DataFrame(data={'firm':[1,2,3,4,5],'x1':[1,2,1.5,2,2.5],'x2':[1.5,0.5,1,2,2],'y1':[1,2,1.5,1.5,1]})
-datos=datos4
-
-datos5=pd.DataFrame(data={'firm':[1,2,4,5],'x1':[1,2,1.5,2.5],'x2':[1.5,0.5,1,2],'y1':[1,2,1.5,1]}) #distintos y
-datos6=pd.DataFrame(data={'firm':[1,2,4,5],'x1':[1,2.5,1.5,2.5],'x2':[1.5,0.5,1,2],'y1':[1,1,1,1]}) #problema cuando frontera por tres
-datos7=pd.DataFrame(data={'firm':[1,2,5],'x1':[1,2.5,2.5],'x2':[1.5,0.5,2],'y1':[1,1,1]}) #frontera solo con dos
-datos8=pd.DataFrame(data={'firm':[1,2,4,5],'x1':[1,2.5,1.5,1.5],'x2':[1.5,0.5,1,2.5],'y1':[1,1,1,1]}) #cuando esta cerca de una cara
-
-datos=datos6
-
-firms=list(datos['firm'])
-
-#voy a calcular la eficiencia de todas las empresas del pigdata (248) ¿cuantas son ineficientes?
-
-
-def calculate_dea(datos,k,xk_sol,type):
-    
+    #optimization model
     m=gp.Model("cfbm")
 
-    #parametros
+    #parameters
 
-    firms=list(datos['firm'])
-    inputs=[i for i in datos.columns if 'x' in i]
-    outputs=[i for i in datos.columns if 'y' in i]
-    #w_inputs=[i for i in datos.columns if 'w' in i]
-    #w_outputs=[i for i in datos.columns if 'p' in i]
-
-    x0={}
-    for f in firms:
-        x0[f]=datos[datos.firm==f][inputs]
-
-    if xk_sol!=[]:
-        for i in inputs:
-            x0[k][i]=xk_sol[i]
-
-    y0={}
-    for f in firms:
-        y0[f]=datos[datos.firm==f][outputs]
- 
-
-    l={}
-    for f in firms:
-        l[f]=m.addVar(lb=0,name='lambda'+str(f)) #lambda de cada firma
+    firms=list(data['firm'])
+    inputs=[i for i in data.columns if 'x' in i]
+    outputs=[i for i in data.columns if 'y' in i]
+    #w_inputs=[i for i in data.columns if 'w' in i]
+    #w_outputs=[i for i in data.columns if 'p' in i]
     
-
-    
-    Ek=m.addVar(lb=0,ub=1,name='eff')
-
-
-    #obj function
-    m.setObjective(Ek, GRB.MINIMIZE)
-
-    #constraints
-    
-    for i in inputs:
-        m.addConstr(Ek*x0[k][i]>=gp.quicksum(l[f]*x0[f][i] for f in firms), "rin"+str(i))
-
-
-    for o in outputs:
-        m.addConstr(float(y0[k][o])<=gp.quicksum(l[f]*y0[f][o] for f in firms), "rout"+str(o))
-
-    if type=='VRS':
-        m.addConstr(gp.quicksum(l[f] for f in firms)==1)
-
-
-    #m.write('cfbench.lp')
-
-    m.optimize()
-
-    print('Obj: '+str(m.ObjVal))
-
-    
-    efi=Ek.getAttr(GRB.Attr.X)
-
-
-    
-    lambdas_sol={}
-    for f in firms:
-        lambdas_sol[f]=l[f].getAttr(GRB.Attr.X)
-
-
-    return efi, lambdas_sol
-
-
-xk_sol=[]
-k=5
-efi, lambdas_dados=calculate_dea(datos,k,xk_sol,'CRS')
-xk_sol={'x1':1.5,'x2':1}
-
-
-#inefi_pigdata={}
-#for f in firms:
-#    efi, lambdas_dados=calculate_dea(datos,f,[])
-#    if efi<1:
-#        inefi_pigdata[f]=efi
-
-#inefi_pigdata
-
-#199 empresas son ineficientes
-
-#muyinefi={}#
-#for f in in#efi_pigdata.keys():
-#    if inefi_pigdata[f]<0.75:
-#        muy#inefi[f]=inefi_pigdata[f]
-
-#len(muyinefi.keys())
-
-#hay 39 empresas con una eficiencia por debajo de 0.75
-
-#import json
-#with open('inefi_pigdata.txt', 'w') as file:
-#     file.write(json.dumps(inefi_pigdata)) 
-
-#xk_sol={}
-#for i in inputs:
-#    xk_sol[i]=1
-
-#xk_sol={'x1','x2','x3','x4'}
-
-def counterf(datos,k,E_deseada,norm,type):
-
-
+    #normalizing the data
    
-    ##creo el modelo de optimization 
-
-    #modelo
-    m=gp.Model("cfbm")
-
-    #parametros
-
-    firms=list(datos['firm'])
-    inputs=[i for i in datos.columns if 'x' in i]
-    outputs=[i for i in datos.columns if 'y' in i]
-    #w_inputs=[i for i in datos.columns if 'w' in i]
-    #w_outputs=[i for i in datos.columns if 'p' in i]
-    #normalizo
-
-    #min_max_scaler = preprocessing.MinMaxScaler()
-    #datos[inputs] = datos[inputs].apply(lambda x: (x - x.min()) / (x.max() - x.min())) #quito el output porque es cte
-    #datos_s= min_max_scaler.fit_transform(datos, axis=1)) 
-    #datos_s = pd.DataFrame(datos_s,columns=datos.columns)
-    #boston=datos_s
+    #data[inputs] = data[inputs].apply(lambda x: (x - x.min()) / (x.max() - x.min())) 
 
 
 
     x0={}
     for f in firms:
-        x0[f]=datos[datos.firm==f][inputs]
+        x0[f]=data[data.firm==f][inputs]
 
     y0={}
     for f in firms:
-        y0[f]=datos[datos.firm==f][outputs]
+        y0[f]=data[data.firm==f][outputs]
 
+
+    F_desired=1/E_desired 
+
+
+  
+    M_l0=float(x0[k][max(x0[k])]) 
+
+    #adjust 
     
-
-
-    F_deseada=1/E_deseada #1/E_deseada
-
-
-    
-
-    M_l0=float(x0[k][max(x0[k])]) #los M para la l0
-
     M_1=10 #1e4
     M_2=10 # 1
     M_3=10 #F_deseada
     M_4=10 #10 
-    #M=1e5 #ajustar
 
-    #las variables
- 
 
-    #los beta de cada firma 
+    #variables
+
     beta={}
     for f in firms:
         beta[f]=m.addVar(lb=0,name='beta'+str(f)) 
 
 
-
-    F=m.addVar(lb=1,name='inveff'+str(k))#calculo de la nueva eff F=1/E
+    F=m.addVar(lb=1,name='inveff'+str(k))
 
     #counterfactual variable
     xk={}
     for i in inputs:
-        xk[i]=m.addVar(lb=0,name='cf'+str(i)) #counterf de los inputs
+        xk[i]=m.addVar(lb=0,name='cf'+str(i)) 
     
     #gamma auxiliar bilevel
     gamma={}
@@ -248,10 +114,7 @@ def counterf(datos,k,E_deseada,norm,type):
         m.setObjective(gp.quicksum(xik[i] for i in inputs), GRB.MINIMIZE)
     elif norm=="l0l2":
         m.setObjective(gp.quicksum(xik[i] for i in inputs)+1e-5*gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE) 
-
-    #m.setObjective(gp.quicksum(xik[i] for i in inputs)+0.1*gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE) 
-    #m.setObjective(gp.quicksum(xik[i] for i in inputs), GRB.MINIMIZE)
-    #m.setObjective(gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE) 
+ 
 
     #constraints
 
@@ -296,27 +159,23 @@ def counterf(datos,k,E_deseada,norm,type):
         m.addConstr(gp.quicksum(gamma[i]*x0[f][i] for i in inputs)-gp.quicksum(gamma[o]*y0[f][o] for o in outputs) <= M_4*(1-w[f]))        
     
         
-    m.addConstr(F<=F_deseada)
+    m.addConstr(F<=F_desired)
 
     
 
 
-    #para la l0
+    #l0
     for i in inputs:
         m.addConstr((-M_l0*xik[i]<=xk[i]-x0[k][i]),"l01_"+str(i))
         m.addConstr((xk[i]-x0[k][i]<=M_l0*xik[i]),"l02_"+str(i))
-
-
-
-    #m.write('cfbench.lp')
 
 
     m.optimize()
 
 
 
-    print('Runtime: '+ str(m.Runtime))
-    print('Obj: '+str(m.ObjVal))
+    #print('Runtime: '+ str(m.Runtime))
+    #print('Obj: '+str(m.ObjVal))
 
     fobj=m.ObjVal
 
@@ -324,14 +183,14 @@ def counterf(datos,k,E_deseada,norm,type):
     for i in inputs:
         xk_sol[i]=xk[i].getAttr(GRB.Attr.X)
 
-    cambio={}
+    change={}
 
     for i in inputs:
-        cambio[i]=float(xk[i].getAttr(GRB.Attr.X)-x0[k][i])
+        change[i]=float(xk[i].getAttr(GRB.Attr.X)-x0[k][i])
 
-    print('x0: '+str(x0[k]))
-    print('x_sol: '+str(xk_sol))
-    print('cambio: '+str(cambio))
+    #print('x0: '+str(x0[k]))
+    #print('x_sol: '+str(xk_sol))
+    #print('cambio: '+str(change))
     
 
 
@@ -345,13 +204,6 @@ def counterf(datos,k,E_deseada,norm,type):
     lambda_sol={}
     for f in firms:
         lambda_sol[f]=beta_sol[f]*E_sol
-    
-    #for o in outputs:
-    #    print(v[o].getAttr(GRB.Attr.X))
-
-
-    #print([(f,l) for (f,l) in zip (lambdas_dados.keys(),lambdas_dados.values()) if l!=0])
-    #print([(f,l) for (f,l) in zip (lambda_sol.keys(),lambda_sol.values()) if l!=0])
 
 
     u_sol={}
@@ -377,122 +229,20 @@ def counterf(datos,k,E_deseada,norm,type):
         mu_sol[f]=mu[f].getAttr(GRB.Attr.X)
     mu_sol['F']=mu['F'].getAttr(GRB.Attr.X)
 
-    for i in inputs:
-        print(xk_sol[i]-gp.quicksum(beta_sol[f]*float(x0[f][i]) for f in firms))
+    #for i in inputs:
+    #    print(xk_sol[i]-gp.quicksum(beta_sol[f]*float(x0[f][i]) for f in firms))
 
     #for f in firms:
     #    print(gp.quicksum(gamma_sol[i]*x0[f][i] for i in inputs)-gp.quicksum(gamma_sol[o]*y0[f][o] for o in outputs))
 
-    return cambio, xk_sol, E_sol,lambda_sol, fobj
+    return change, xk_sol, E_sol,lambda_sol, fobj
 
     
-
-E_deseada=0.8
+E_desired=0.8
 k=5
 norm="l2"
 type='CRS'
-cambio, xk_sol, E_sol,lambda_sol, fobj = counterf(datos,k,E_deseada,norm,type)
-
-
-#con data={'firm':[1,2,3],'x1':[1,2,2],'x2':[2,1,2],'y1':[1,1,1]}
-#firm 3 tiene Efi=0.75 si pido E=0.8
-#con l0:            x0=[2,2], counterf=[2,1] y E_sol=1
-#con l2:            x0=[2,2], counterf=[1.875,1.875] y E_sol=0.8
-#con l0+0.1*l2 l    x0=[2,2], counterf=[2, 1.75] y E_sol=0.8
-
-#con data={'firm':[1,2,3],'x1':[1,2,2],'x2':[1.5,1,2],'y1':[1,1,1]}
-#firm 3 tiene Efi=0.66 si pido E=0.8
-#con l0:            x0=[2,2], counterf=[1,2] y E_sol=1
-#con l2:            x0=[2,2], counterf=[1.8,1.6] y E_sol=0.8
-#con l0+0.1*l2 l    x0=[2,2], counterf=[2, 1.5] y E_sol=0.8
-
-import json
-with open('inefi_pigdata.txt', 'r') as f:
-  inefi = json.load(f)
-
-
-inefi2={}
-for f in inefi.keys():
-    if inefi[f]<0.7:
-        inefi2[f]=inefi[f]
-
-
-
-solucion=[]
-cambios=[]
-objetivo=[]
-efi=[]
-
-#empiezo con la euclidea
-#deseo una eficiencia de 0.8
-
-for f in list(inefi2.keys()):
-    cambio, xk_sol, E_sol,lambda_sol, fobj = counterf(datos,int(f),0.7,"l2",type)
-    solucion.append(xk_sol)
-    cambios.append(cambio)
-    objetivo.append(fobj)
-    efi.append(E_sol)
-
-
-#solucion_muyinefi=pd.DataFrame(solucion)
-
-with open('counterf_07_l2.txt', 'w') as file:
-     file.write(json.dumps(solucion)) 
-
-with open('cambio_07_l2.txt', 'w') as file:
-     file.write(json.dumps(cambios)) 
-
-with open('objetivo_07_l2.txt', 'w') as file:
-     file.write(json.dumps(objetivo)) 
-
-with open('efi_07_l2.txt', 'w') as file:
-     file.write(json.dumps(efi)) 
-
-
-
-#efi 0.7
-with open('counterf_07_l2.txt', 'r') as f:
-  sol = json.load(f)
-
-
-prueba=pd.DataFrame(sol)
-prueba['firm']=inefi2.keys()
-prueba['E0']=inefi2.values()
-
-prueba.to_excel('07l2.xlsx')
-
-with open('resultados_nuevos/cambio_1_l2.txt', 'r') as f:
-  cambios = json.load(f)
-
-l=len(cambios)
-
-cambios=pd.DataFrame(cambios)
-
-veces_cambio={}
-for c in list(cambios.columns):
-    veces_cambio[c]=sum(abs(cambios[c])>1e-3)/l
-
-veces_cambio
-
-inputs_changed=[]
-for i in range(l):
-    inputs_changed.append(sum([abs(a)>1e-3 for a in list(cambios.iloc[i])]))
-
-l0_media=sum(inputs_changed)/l
-
-deviations=[]
-for i in range(l):
-    deviations.append(np.linalg.norm(cambios.iloc[i]))
-
-
-l2_media=sum(deviations)/l
-
-summary=veces_cambio
-summary['l0']=l0_media
-summary['l2']=l2_media
-
-summary
-
+change, xk_sol, E_sol,lambda_sol, fobj = counterf(data,k,E_desired,norm,type)
 
 
 
@@ -517,15 +267,6 @@ with open('efi_pigdata.txt', 'r') as f:
 
 efi_firms=list(efi.keys())
 efi_firms=list(map(int, efi_firms))
-
-#cojo las empresas cuya lambda es distinta de cero al calcular el dea de k
-xk_sol=[]
-k=3
-efi, lambdas_dados=calculate_dea(datos,k,xk_sol,'CRS')
-
-efi_firms=[f for (f,l) in zip (lambdas_dados.keys(),lambdas_dados.values()) if l!=0]
-
-
 
 def counterf2(datos,efi_firms,k,E_deseada,norm):
 
@@ -585,24 +326,7 @@ def counterf2(datos,efi_firms,k,E_deseada,norm):
     for o in outputs:
         m.addConstr(float(y0[k][o])==gp.quicksum(lambda_n[f]*float(y0[f][o]) for f in efi_firms), "rout"+str(o)) 
 
-
-
-    #para la l0
-    #for i in inputs:
-    #    m.addConstr((-M_l0*xik[i]<=xk[i]-x0[k][i]),"l01_"+str(i))
-    #    m.addConstr((xk[i]-x0[k][i]<=M_l0*xik[i]),"l02_"+str(i))
-
-
-
-    #m.write('cfbench.lp')
-
-
     m.optimize()
-
-
-
-    print('Runtime: '+ str(m.Runtime))
-    print('Obj: '+str(m.ObjVal))
 
     fobj=m.ObjVal
 
@@ -625,12 +349,6 @@ def counterf2(datos,efi_firms,k,E_deseada,norm):
     for f in efi_firms:
         lambda_sol[f]=lambda_n[f].getAttr(GRB.Attr.X)
     
-    #for o in outputs:
-    #    print(v[o].getAttr(GRB.Attr.X))
-
-
-    #print([(f,l) for (f,l) in zip (lambdas_dados.keys(),lambdas_dados.values()) if l!=0])
-    #print([(f,l) for (f,l) in zip (lambda_sol.keys(),lambda_sol.values()) if l!=0])
 
 
     return cambio, xk_sol, lambda_sol, fobj
@@ -643,8 +361,3 @@ efi_firms=[1,2,4]
 cambio2, xk_sol2, lambda_sol2, fobj2= counterf2(datos,efi_firms,k,E_deseada,norm)
 
 
-
-print([(f,l) for (f,l) in zip (lambdas_dados.keys(),lambdas_dados.values()) if l!=0])
-
-efi_firms
-print([(f,l) for (f,l) in zip (lambda_sol.keys(),lambda_sol.values()) if l!=0])
