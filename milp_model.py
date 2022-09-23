@@ -12,8 +12,7 @@ from gurobipy import GRB
 #type: technology used, can be CRS or VRS
 
 def counterf(data,k,E_desired,norm,type): 
-
-    #optimization model
+    
     m=gp.Model("cfbm")
 
     #parameters
@@ -21,11 +20,6 @@ def counterf(data,k,E_desired,norm,type):
     firms=list(data['firm'])
     inputs=[i for i in data.columns if 'x' in i]
     outputs=[i for i in data.columns if 'y' in i]
-    #w_inputs=[i for i in data.columns if 'w' in i]
-    #w_outputs=[i for i in data.columns if 'p' in i]
-    
-    #normalizing the data?
-    #data[inputs] = data[inputs].apply(lambda x: (x - x.min()) / (x.max() - x.min())) 
 
     x0={}
     for f in firms:
@@ -36,23 +30,21 @@ def counterf(data,k,E_desired,norm,type):
         y0[f]=data[data.firm==f][outputs]
 
 
-    F_desired=1/E_desired 
-  
+    F_deseada=1/E_deseada 
+
+
     M_l0=float(x0[k][max(x0[k])]) 
 
-    #adjust 
-    
-    M_1=10 #1e4
-    M_2=10 # 1
-    M_3=10 #F_deseada
-    M_4=10 #10 
+
+    M_1=10 
+    M_2=10
+    M_4=10 
 
     #variables
-
+ 
     beta={}
     for f in firms:
         beta[f]=m.addVar(lb=0,name='beta'+str(f)) 
-
 
     F=m.addVar(lb=1,name='inveff'+str(k))
 
@@ -61,19 +53,12 @@ def counterf(data,k,E_desired,norm,type):
     for i in inputs:
         xk[i]=m.addVar(lb=0,name='cf'+str(i)) 
     
-    #gamma auxiliar bilevel
+    
     gamma={}
     for i in inputs:
         gamma[i]=m.addVar(lb=0,name="gamma_"+str(i))
     for o in outputs:
-        gamma[o]=m.addVar(lb=0,name="gamma_"+str(o))
-    
-    mu={}
-    for f in firms:
-        mu[f]=m.addVar(lb=0,name="gamma_beta_"+str(f))
-    mu['F']=m.addVar(lb=0, name="gamma_F")
-
-    #u_i y v auxiliar milp kkt
+        gamma[o]=m.addVar(lb=0,name="gamma_"+str(o))  
 
     u={}
     for i in inputs:
@@ -86,7 +71,7 @@ def counterf(data,k,E_desired,norm,type):
     w={}
     for f in firms:
         w[f]=m.addVar(vtype=GRB.BINARY, name="milp_kkt3_beta_"+str(f))
-    w[0]=m.addVar(vtype=GRB.BINARY,name="milp_kkt_F")
+    
 
     if type=='VRS':
         chi=m.addVar(name='vrscond')
@@ -101,9 +86,12 @@ def counterf(data,k,E_desired,norm,type):
     elif norm=="l0":
         m.setObjective(gp.quicksum(xik[i] for i in inputs), GRB.MINIMIZE)
     elif norm=="l0l2":
-        m.setObjective(gp.quicksum(xik[i] for i in inputs)+1e-5*gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE) 
+        m.setObjective(gp.quicksum(xik[i] for i in inputs)+0.5*gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE) 
 
+   
     #constraints
+
+    #primal
 
     for i in inputs:
         m.addConstr(xk[i]>=gp.quicksum(beta[f]*float(x0[f][i]) for f in firms), "rin"+str(i))
@@ -111,17 +99,18 @@ def counterf(data,k,E_desired,norm,type):
     for o in outputs:
         m.addConstr(F*float(y0[k][o])<=gp.quicksum(beta[f]*float(y0[f][o]) for f in firms), "rout"+str(o)) 
 
-
-    if type=='VRS':
-        m.addConstr(gp.quicksum(gamma[o]*y0[k][o] for o in outputs)-mu['F']+chi==1, 'kkt1')
+    #dual
+    if type=='VRS': #repasar para este caso
+        m.addConstr(gp.quicksum(gamma[o]*y0[k][o] for o in outputs)+chi>=1, 'kkt1')
         for f in firms:
-            m.addConstr(gp.quicksum(gamma[i]*x0[f][i] for i in inputs)-gp.quicksum(gamma[o]*y0[f][o] for o in outputs)-mu[f]-chi==0, 'kkt2')
+            m.addConstr(gp.quicksum(gamma[i]*x0[f][i] for i in inputs)-gp.quicksum(gamma[o]*y0[f][o] for o in outputs)-chi>=0, 'kkt2')
         m.addConstr(F-gp.quicksum(beta[f] for f in firms)==0, 'vrscond')
     else:
-        m.addConstr(gp.quicksum(gamma[o]*y0[k][o] for o in outputs)-mu['F']==1, 'kkt1')
+        m.addConstr(gp.quicksum(gamma[o]*y0[k][o] for o in outputs)>=1, 'kkt1')
         for f in firms:
-            m.addConstr(gp.quicksum(gamma[i]*x0[f][i] for i in inputs)-gp.quicksum(gamma[o]*y0[f][o] for o in outputs)-mu[f]==0, 'kkt2')
+            m.addConstr(gp.quicksum(gamma[i]*x0[f][i] for i in inputs)-gp.quicksum(gamma[o]*y0[f][o] for o in outputs)>=0, 'kkt2')
 
+    #slacks
     for i in inputs:
         m.addConstr(gamma[i]<=M_1*u[i])
 
@@ -133,26 +122,26 @@ def counterf(data,k,E_desired,norm,type):
 
     for o in outputs:
         m.addConstr(-F*float(y0[k][o])+gp.quicksum(beta[f]*float(y0[f][o]) for f in firms)<=M_2*(1-v[o]))
-    
-    m.addConstr(F<=M_3*w[0])
 
-    m.addConstr(gp.quicksum(gamma[o]*y0[k][o] for o in outputs)-1 <= M_3*(1-w[0]))
-
+    #frontier definition 
     for f in firms:
         m.addConstr(beta[f]<=M_4*w[f])
 
     for f in firms:
         m.addConstr(gp.quicksum(gamma[i]*x0[f][i] for i in inputs)-gp.quicksum(gamma[o]*y0[f][o] for o in outputs) <= M_4*(1-w[f]))        
-          
-    m.addConstr(F<=F_desired)
+    
+    #imposing efficiency desired
+    m.addConstr(F<=F_deseada)
 
-    #l0
+    #l0 norm
     for i in inputs:
         m.addConstr((-M_l0*xik[i]<=xk[i]-x0[k][i]),"l01_"+str(i))
         m.addConstr((xk[i]-x0[k][i]<=M_l0*xik[i]),"l02_"+str(i))
 
+    #m.write('cfbench.lp')
+
     m.optimize()
-    
+
     fobj=m.ObjVal
 
     xk_sol={}
@@ -163,8 +152,11 @@ def counterf(data,k,E_desired,norm,type):
 
     for i in inputs:
         change[i]=float(xk[i].getAttr(GRB.Attr.X)-x0[k][i])
-
-    return change, xk_sol, E_sol,lambda_sol, fobj
+    
+    F_sol=F.getAttr(GRB.Attr.X)
+    E_sol=1/F_sol
+ 
+    return change, xk_sol, E_sol, fobj
 
    
     
@@ -175,7 +167,7 @@ E_desired=0.8
 k=5
 norm="l2"
 type='CRS'
-change, xk_sol, E_sol,lambda_sol, fobj = counterf(data,k,E_desired,norm,type)
+change, xk_sol, E_sol, fobj = counterf(data,k,E_desired,norm,type)
 
 
 
