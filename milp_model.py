@@ -6,39 +6,43 @@ from sklearn import preprocessing
 import gurobipy as gp
 from gurobipy import GRB
 
+#data: data
+#firms: list of names(number) of the firms
+#inputs: name of inputs
+#outputs: name of outputs
 #k: firm to calculate the counterfactual
 #E_desired: efficiency one wants to obtain
-#norm: distance used, can be l2, l0 or l2+l0
+#norm: distance used, can be l2, l0, l2+l0 or l1
 #type: technology used, can be CRS or VRS
+#lamm: value of lambdas
 
-def counterf(data,k,E_desired,norm,type): 
-    
+
+def counterf(data,firms,inputs,outputs,k,E_desired,norm,type,lamm):
+
+    #model
     m=gp.Model("cfbm")
 
     #parameters
 
-    firms=list(data['firm'])
-    inputs=[i for i in data.columns if 'x' in i]
-    outputs=[i for i in data.columns if 'y' in i]
-
     x0={}
     for f in firms:
-        x0[f]=data[data.firm==f][inputs]
+        x0[f]=datos[datos.DMU==f][inputs]
 
     y0={}
     for f in firms:
-        y0[f]=data[data.firm==f][outputs]
+        y0[f]=datos[datos.DMU==f][outputs]
 
 
-    F_deseada=1/E_deseada 
+    F_deseada=1/E_deseada #1/E_deseada
 
 
-    M_l0=float(x0[k][max(x0[k])]) 
+    M_l0=float(x0[k][max(x0[k])]) #M for l0
 
 
-    M_1=10 
-    M_2=10
-    M_4=10 
+    #bigMs
+    M_1=1e4   #slack input
+    M_2=1e4  #slack output
+    M_4=1e4  #border 
 
     #variables
  
@@ -58,7 +62,9 @@ def counterf(data,k,E_desired,norm,type):
     for i in inputs:
         gamma[i]=m.addVar(lb=0,name="gamma_"+str(i))
     for o in outputs:
-        gamma[o]=m.addVar(lb=0,name="gamma_"+str(o))  
+        gamma[o]=m.addVar(lb=0,name="gamma_"+str(o))
+
+    
 
     u={}
     for i in inputs:
@@ -80,14 +86,19 @@ def counterf(data,k,E_desired,norm,type):
     for i in inputs:
         xik[i]=m.addVar(vtype=GRB.BINARY, name='l0_'+str(i))
 
+    xik2={}
+    for i in inputs:
+        xik2[i]=m.addVar(lb=0, name='l1_'+str(i))
+
     #obj function
     if norm=="l2":
         m.setObjective(gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE)
     elif norm=="l0":
         m.setObjective(gp.quicksum(xik[i] for i in inputs), GRB.MINIMIZE)
     elif norm=="l0l2":
-        m.setObjective(gp.quicksum(xik[i] for i in inputs)+0.5*gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE) 
-
+        m.setObjective(lamm*gp.quicksum(xik[i] for i in inputs)+gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE) 
+    elif norm=="l1":
+        m.setObjective(gp.quicksum(xik2[i] for i in inputs), GRB.MINIMIZE)
    
     #constraints
 
@@ -100,13 +111,13 @@ def counterf(data,k,E_desired,norm,type):
         m.addConstr(F*float(y0[k][o])<=gp.quicksum(beta[f]*float(y0[f][o]) for f in firms), "rout"+str(o)) 
 
     #dual
-    if type=='VRS': #repasar para este caso
-        m.addConstr(gp.quicksum(gamma[o]*y0[k][o] for o in outputs)+chi>=1, 'kkt1')
+    if type=='VRS': 
+        m.addConstr(gp.quicksum(gamma[o]*y0[k][o] for o in outputs)+chi==1, 'kkt1')
         for f in firms:
             m.addConstr(gp.quicksum(gamma[i]*x0[f][i] for i in inputs)-gp.quicksum(gamma[o]*y0[f][o] for o in outputs)-chi>=0, 'kkt2')
         m.addConstr(F-gp.quicksum(beta[f] for f in firms)==0, 'vrscond')
     else:
-        m.addConstr(gp.quicksum(gamma[o]*y0[k][o] for o in outputs)>=1, 'kkt1')
+        m.addConstr(gp.quicksum(gamma[o]*y0[k][o] for o in outputs)==1, 'kkt1') #>=1
         for f in firms:
             m.addConstr(gp.quicksum(gamma[i]*x0[f][i] for i in inputs)-gp.quicksum(gamma[o]*y0[f][o] for o in outputs)>=0, 'kkt2')
 
@@ -133,31 +144,73 @@ def counterf(data,k,E_desired,norm,type):
     #imposing efficiency desired
     m.addConstr(F<=F_deseada)
 
-    #l0 norm
+    #l0 norm linearization
     for i in inputs:
         m.addConstr((-M_l0*xik[i]<=xk[i]-x0[k][i]),"l01_"+str(i))
         m.addConstr((xk[i]-x0[k][i]<=M_l0*xik[i]),"l02_"+str(i))
 
+    #l1 norm lineatization
+    for i in inputs:
+        m.addConstr(xik2[i]>=(xk[i]-x0[k][i]),"l11_"+str(i))
+        m.addConstr(-xik2[i]<=(xk[i]-x0[k][i]),"l12_"+str(i))
+
+ 
+
     #m.write('cfbench.lp')
 
+    m.setParam('OutputFlag', 0)
     m.optimize()
 
-    fobj=m.ObjVal
+    if (m.status == 3) or (m.status==4):
+        change={i:np.nan for i in inputs} 
+        xk_sol={i:np.nan for i in inputs}
+        E_sol=np.nan
+        lambda_sol={i:np.nan for i in firms}
+        fobj=np.nan
+        dev=np.nan
 
-    xk_sol={}
-    for i in inputs:
-        xk_sol[i]=xk[i].getAttr(GRB.Attr.X)
-
-    change={}
-
-    for i in inputs:
-        change[i]=float(xk[i].getAttr(GRB.Attr.X)-x0[k][i])
+    else:
     
-    F_sol=F.getAttr(GRB.Attr.X)
-    E_sol=1/F_sol
- 
-    return change, xk_sol, E_sol, fobj
 
+        print('Runtime: '+ str(m.Runtime))
+        print('Obj: '+str(m.ObjVal))
+
+        fobj=m.ObjVal
+
+        xk_sol={}
+        for i in inputs:
+            xk_sol[i]=xk[i].getAttr(GRB.Attr.X)
+
+        change={}
+
+        for i in inputs:
+            change[i]=float(xk[i].getAttr(GRB.Attr.X)-x0[k][i])
+
+        dev=sum((float(x0[k][i])-xk_sol[i])*(float(x0[k][i])-xk_sol[i]) for i in inputs)
+    
+
+        beta_sol={}
+        for f in firms:
+            beta_sol[f]=beta[f].getAttr(GRB.Attr.X)
+
+        F_sol=F.getAttr(GRB.Attr.X)
+        E_sol=1/F_sol
+
+        lambda_sol={}
+        for f in firms:
+            lambda_sol[f]=beta_sol[f]*E_sol
+
+      
+
+    return change, xk_sol, E_sol,lambda_sol, fobj,dev
+
+ 
+#change: vector of changes
+#xk_sol: counterfactual explanation
+#E_sol: efficiency of the counterfactual 
+#lambda_sol: new value of lambdas 
+#fobj: value of the objective function
+#dev: total deviations 
    
     
     
