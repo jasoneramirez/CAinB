@@ -17,7 +17,7 @@ from gurobipy import GRB
 
 
 
-def counterf_github(df,firms,inputs,outputs,k,E_desired,type,lamm):
+def counterf(df,firms,inputs,outputs,k,E_desired,type,lamm):
 
     #model
     m=gp.Model("cfbm")
@@ -218,7 +218,7 @@ k=3
 E_desired=0.8
 type='CRS'
 lamm=[1,0,1]
-change, xk_sol, E_sol,lambda_sol, fobj,dev = counterf_github(df,firms,inputs,outputs,k,E_desired,type,lamm)
+change, xk_sol, E_sol,lambda_sol, fobj,dev = counterf(df,firms,inputs,outputs,k,E_desired,type,lamm)
 print(xk_sol)
 
 
