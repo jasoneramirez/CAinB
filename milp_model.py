@@ -6,18 +6,18 @@ from sklearn import preprocessing
 import gurobipy as gp
 from gurobipy import GRB
 
-#data: data
+#df: data
 #firms: list of names(number) of the firms
 #inputs: name of inputs
 #outputs: name of outputs
 #k: firm to calculate the counterfactual
 #E_desired: efficiency one wants to obtain
-#norm: distance used, can be l2, l0, l2+l0 or l1
 #type: technology used, can be CRS or VRS
-#lamm: value of lambdas
+#lamm: value of lambdas lamm[0]*l0+lamm[1]*l1+lamm[2]*l2
 
 
-def counterf(data,firms,inputs,outputs,k,E_desired,norm,type,lamm):
+
+def counterf_github(df,firms,inputs,outputs,k,E_desired,type,lamm):
 
     #model
     m=gp.Model("cfbm")
@@ -26,23 +26,23 @@ def counterf(data,firms,inputs,outputs,k,E_desired,norm,type,lamm):
 
     x0={}
     for f in firms:
-        x0[f]=datos[datos.DMU==f][inputs]
+        x0[f]=df[df.DMU==f][inputs]
 
     y0={}
     for f in firms:
-        y0[f]=datos[datos.DMU==f][outputs]
+        y0[f]=df[df.DMU==f][outputs]
 
 
-    F_deseada=1/E_deseada #1/E_deseada
+    F_desired=1/E_desired 
 
 
     M_l0=float(x0[k][max(x0[k])]) #M for l0
 
 
-    #bigMs
-    M_1=1e4   #slack input
-    M_2=1e4  #slack output
-    M_4=1e4  #border 
+    #bigMs (change depending on the scale of the data)
+    M_1=10   #slack input
+    M_2=10 #slack output
+    M_4=10  #border 
 
     #variables
  
@@ -91,14 +91,8 @@ def counterf(data,firms,inputs,outputs,k,E_desired,norm,type,lamm):
         xik2[i]=m.addVar(lb=0, name='l1_'+str(i))
 
     #obj function
-    if norm=="l2":
-        m.setObjective(gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE)
-    elif norm=="l0":
-        m.setObjective(gp.quicksum(xik[i] for i in inputs), GRB.MINIMIZE)
-    elif norm=="l0l2":
-        m.setObjective(lamm*gp.quicksum(xik[i] for i in inputs)+gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE) 
-    elif norm=="l1":
-        m.setObjective(gp.quicksum(xik2[i] for i in inputs), GRB.MINIMIZE)
+    m.setObjective(lamm[0]*gp.quicksum(xik[i] for i in inputs)+lamm[1]*gp.quicksum(xik2[i] for i in inputs)+lamm[2]*gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE)
+    
    
     #constraints
 
@@ -142,7 +136,7 @@ def counterf(data,firms,inputs,outputs,k,E_desired,norm,type,lamm):
         m.addConstr(gp.quicksum(gamma[i]*x0[f][i] for i in inputs)-gp.quicksum(gamma[o]*y0[f][o] for o in outputs) <= M_4*(1-w[f]))        
     
     #imposing efficiency desired
-    m.addConstr(F<=F_deseada)
+    m.addConstr(F<=F_desired)
 
     #l0 norm linearization
     for i in inputs:
@@ -204,6 +198,7 @@ def counterf(data,firms,inputs,outputs,k,E_desired,norm,type,lamm):
 
     return change, xk_sol, E_sol,lambda_sol, fobj,dev
 
+
  
 #change: vector of changes
 #xk_sol: counterfactual explanation
@@ -215,12 +210,16 @@ def counterf(data,firms,inputs,outputs,k,E_desired,norm,type,lamm):
     
     
 #illustration
-data=pd.DataFrame(data={'firm':[1,2,4,5],'x1':[1,2.5,1.5,1.5],'x2':[1.5,0.5,1,2.5],'y1':[1,1,1,1]})    
+df=pd.DataFrame(data={'DMU':[1,2,3],'x1':[0.5,1.5,1.75],'x2':[1,0.5,1.25],'y1':[1,1,1]})
+firms=df['DMU']
+inputs=[i for i in df.columns if 'x' in i]
+outputs=[i for i in df.columns if 'y' in i]
+k=3
 E_desired=0.8
-k=5
-norm="l2"
 type='CRS'
-change, xk_sol, E_sol, fobj = counterf(data,k,E_desired,norm,type)
+lamm=[1,0,1]
+change, xk_sol, E_sol,lambda_sol, fobj,dev = counterf_github(df,firms,inputs,outputs,k,E_desired,type,lamm)
+print(xk_sol)
 
 
 
