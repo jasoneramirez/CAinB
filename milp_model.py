@@ -13,11 +13,11 @@ from gurobipy import GRB
 #k: firm to calculate the counterfactual
 #E_desired: efficiency one wants to obtain
 #type: technology used, can be CRS or VRS
-#lamm: value of lambdas lamm[0]*l0+lamm[1]*l1+lamm[2]*l2
+#nu: value of nus nu[0]*l0+nu[1]*l1+nu[2]*l2
 
 
 
-def counterf(df,firms,inputs,outputs,k,E_desired,type,lamm):
+def counterf(df,firms,inputs,outputs,k,E_desired,type,nu):
 
     #model
     m=gp.Model("cfbm")
@@ -91,7 +91,7 @@ def counterf(df,firms,inputs,outputs,k,E_desired,type,lamm):
         xik2[i]=m.addVar(lb=0, name='l1_'+str(i))
 
     #obj function
-    m.setObjective(lamm[0]*gp.quicksum(xik[i] for i in inputs)+lamm[1]*gp.quicksum(xik2[i] for i in inputs)+lamm[2]*gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE)
+    m.setObjective(nu[0]*gp.quicksum(xik[i] for i in inputs)+nu[1]*gp.quicksum(xik2[i] for i in inputs)+nu[2]*gp.quicksum((float(x0[k][i])-xk[i])*(float(x0[k][i])-xk[i]) for i in inputs), GRB.MINIMIZE)
     
    
     #constraints
@@ -217,8 +217,8 @@ outputs=[i for i in df.columns if 'y' in i]
 k=3
 E_desired=0.8
 type='CRS'
-lamm=[1,0,1]
-change, xk_sol, E_sol,lambda_sol, fobj,dev = counterf(df,firms,inputs,outputs,k,E_desired,type,lamm)
+nu=[1,0,1]
+change, xk_sol, E_sol,lambda_sol, fobj,dev = counterf(df,firms,inputs,outputs,k,E_desired,type,nu)
 print(xk_sol)
 
 
